@@ -9,7 +9,14 @@
       margin: 0;
       width: 100%;
       height: 100%;
+      overflow: hidden;
       background: #000;
+    }
+
+    body {
+      cursor: pointer;
+      touch-action: manipulation;
+      user-select: none;
     }
 
     img {
@@ -17,19 +24,22 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      cursor: pointer;
-      user-select: none;
+      transform-origin: center;
+      pointer-events: none;
       -webkit-user-drag: none;
     }
   </style>
 </head>
 <body>
-  <img id="cam" src="" alt="Camera image" />
+  <img id="cam" alt="Camera image" />
 
   <script>
     const cameraUrl = "https://visitelizabethcity.com/camera/current.jpg";
     const cam = document.getElementById("cam");
     let refreshTimer = null;
+    let clickTimer = null;
+    let zoom = 1;
+    let zoomBeforeClick = 1;
 
     function randomDelayMs() {
       const min = 2 * 60 * 1000;
@@ -39,11 +49,35 @@
 
     function loadImageAndScheduleNext() {
       cam.src = `${cameraUrl}?t=${Date.now()}`;
-      if (refreshTimer) clearTimeout(refreshTimer);
+      clearTimeout(refreshTimer);
       refreshTimer = setTimeout(loadImageAndScheduleNext, randomDelayMs());
     }
 
-    cam.addEventListener("click", loadImageAndScheduleNext);
+    function applyZoom(value) {
+      zoom = Math.max(1, Math.min(5, value));
+      cam.style.transform = `scale(${zoom})`;
+    }
+
+    document.addEventListener("click", (event) => {
+      if (event.detail > 1) return;
+      clearTimeout(clickTimer);
+      zoomBeforeClick = zoom;
+      const direction = event.clientY < window.innerHeight / 2 ? 1 : -1;
+      // Wait briefly so a double click refreshes without changing zoom.
+      clickTimer = setTimeout(() => {
+        applyZoom(zoom + direction * 0.25);
+        clickTimer = null;
+      }, 350);
+    });
+
+    document.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      clearTimeout(clickTimer);
+      clickTimer = null;
+      // Also undo the first click if the browser's double-click interval is longer.
+      applyZoom(zoomBeforeClick);
+      loadImageAndScheduleNext();
+    });
 
     loadImageAndScheduleNext();
   </script>
