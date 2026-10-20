@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Page</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    .card {
+      text-align: center;
+      padding: 2rem;
+      border-radius: 1rem;
+      background: rgba(255,255,255,0.06);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      max-width: 560px;
+    }
+    button {
+      border: 0;
+      border-radius: .75rem;
+      padding: .7rem 1rem;
+      font-size: 1rem;
+      cursor: pointer;
+      background: #38bdf8;
+      color: #082f49;
+      font-weight: 700;
+    }
+    button:hover { filter: brightness(1.05); }
+    #message { margin-top: 1rem; opacity: .95; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>👋 Hello from GitHub Pages</h1>
+    <p>This is your starter static page with JavaScript.</p>
+    <button id="btn">Click me</button>
+    <p id="message">Waiting for a click…</p>
+  </main>
+
+  <script>
+    const btn = document.getElementById('btn');
+    const message = document.getElementById('message');
+    let count = 0;
+
+    btn.addEventListener('click', () => {
+      count += 1;
+      const now = new Date().toLocaleTimeString();
+      message.textContent = `Clicked ${count} time${count === 1 ? '' : 's'} at ${now}`;
+    });
+  </script>
+</body>
+</html>
