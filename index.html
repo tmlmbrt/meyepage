@@ -3,86 +3,49 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>My Page</title>
+  <title>Camera</title>
   <style>
-    :root { color-scheme: light dark; }
-    body {
+    html, body {
       margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
-    }
-    .card {
-      text-align: center;
-      padding: 2rem;
-      border-radius: 1rem;
-      background: rgba(255,255,255,0.06);
-      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-      max-width: 720px;
-      width: min(92vw, 720px);
-    }
-    #camera {
       width: 100%;
-      border-radius: 0.75rem;
-      margin-top: 1rem;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-      background: #111827;
+      height: 100%;
+      background: #000;
     }
-    .meta {
-      margin-top: 0.75rem;
-      font-size: 0.95rem;
-      opacity: 0.9;
-    }
-    button {
-      border: 0;
-      border-radius: .75rem;
-      padding: .7rem 1rem;
-      font-size: 1rem;
+
+    img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
       cursor: pointer;
-      background: #38bdf8;
-      color: #082f49;
-      font-weight: 700;
-      margin-top: 1rem;
+      user-select: none;
+      -webkit-user-drag: none;
     }
-    button:hover { filter: brightness(1.05); }
   </style>
 </head>
 <body>
-  <main class="card">
-    <h1>📷 Elizabeth City Camera</h1>
-    <p>Latest image from the live camera feed.</p>
-
-    <img id="camera" alt="Elizabeth City live camera" />
-    <p id="status" class="meta">Loading image…</p>
-    <button id="refreshBtn">Refresh image</button>
-  </main>
+  <img id="cam" src="" alt="Camera image" />
 
   <script>
-    const cameraUrl = 'https://visitelizabethcity.com/camera/current.jpg';
-    const img = document.getElementById('camera');
-    const status = document.getElementById('status');
-    const refreshBtn = document.getElementById('refreshBtn');
+    const cameraUrl = "https://visitelizabethcity.com/camera/current.jpg";
+    const cam = document.getElementById("cam");
+    let refreshTimer = null;
 
-    function loadCameraImage() {
-      const bustCacheUrl = `${cameraUrl}?t=${Date.now()}`;
-      status.textContent = 'Loading image…';
-      img.src = bustCacheUrl;
+    function randomDelayMs() {
+      const min = 2 * 60 * 1000;
+      const max = 10 * 60 * 1000;
+      return Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
-    img.addEventListener('load', () => {
-      status.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
-    });
+    function loadImageAndScheduleNext() {
+      cam.src = `${cameraUrl}?t=${Date.now()}`;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(loadImageAndScheduleNext, randomDelayMs());
+    }
 
-    img.addEventListener('error', () => {
-      status.textContent = 'Could not load camera image right now.';
-    });
+    cam.addEventListener("click", loadImageAndScheduleNext);
 
-    refreshBtn.addEventListener('click', loadCameraImage);
-
-    loadCameraImage();
+    loadImageAndScheduleNext();
   </script>
 </body>
 </html>
