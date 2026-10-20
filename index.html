@@ -21,7 +21,20 @@
       border-radius: 1rem;
       background: rgba(255,255,255,0.06);
       box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-      max-width: 560px;
+      max-width: 720px;
+      width: min(92vw, 720px);
+    }
+    #camera {
+      width: 100%;
+      border-radius: 0.75rem;
+      margin-top: 1rem;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+      background: #111827;
+    }
+    .meta {
+      margin-top: 0.75rem;
+      font-size: 0.95rem;
+      opacity: 0.9;
     }
     button {
       border: 0;
@@ -32,29 +45,44 @@
       background: #38bdf8;
       color: #082f49;
       font-weight: 700;
+      margin-top: 1rem;
     }
     button:hover { filter: brightness(1.05); }
-    #message { margin-top: 1rem; opacity: .95; }
   </style>
 </head>
 <body>
   <main class="card">
-    <h1>👋 Hello from GitHub Pages</h1>
-    <p>This is your starter static page with JavaScript.</p>
-    <button id="btn">Click me</button>
-    <p id="message">Waiting for a click…</p>
+    <h1>📷 Elizabeth City Camera</h1>
+    <p>Latest image from the live camera feed.</p>
+
+    <img id="camera" alt="Elizabeth City live camera" />
+    <p id="status" class="meta">Loading image…</p>
+    <button id="refreshBtn">Refresh image</button>
   </main>
 
   <script>
-    const btn = document.getElementById('btn');
-    const message = document.getElementById('message');
-    let count = 0;
+    const cameraUrl = 'https://visitelizabethcity.com/camera/current.jpg';
+    const img = document.getElementById('camera');
+    const status = document.getElementById('status');
+    const refreshBtn = document.getElementById('refreshBtn');
 
-    btn.addEventListener('click', () => {
-      count += 1;
-      const now = new Date().toLocaleTimeString();
-      message.textContent = `Clicked ${count} time${count === 1 ? '' : 's'} at ${now}`;
+    function loadCameraImage() {
+      const bustCacheUrl = `${cameraUrl}?t=${Date.now()}`;
+      status.textContent = 'Loading image…';
+      img.src = bustCacheUrl;
+    }
+
+    img.addEventListener('load', () => {
+      status.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
     });
+
+    img.addEventListener('error', () => {
+      status.textContent = 'Could not load camera image right now.';
+    });
+
+    refreshBtn.addEventListener('click', loadCameraImage);
+
+    loadCameraImage();
   </script>
 </body>
 </html>
