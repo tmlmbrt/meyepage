@@ -34,12 +34,22 @@
   <img id="cam" alt="Camera image" />
 
   <script>
-    const cameraUrl = "https://visitelizabethcity.com/camera/current.jpg";
+    const cameraUrls = [
+      "https://visitelizabethcity.com/camera/current.jpg",
+      "https://nc.prod.traveliq.co/map/Cctv/5362",
+      "https://nc.prod.traveliq.co/map/Cctv/5363",
+      "https://nc.prod.traveliq.co/map/Cctv/5313",
+      "https://nc.prod.traveliq.co/map/Cctv/5305"
+    ];
+    let activeIndex = 0;
     const cam = document.getElementById("cam");
     let refreshTimer = null;
     let clickTimer = null;
     let zoom = 1;
     let zoomBeforeClick = 1;
+    let indexBeforeClick = 0;
+    let panXBeforeClick = 0;
+    let panYBeforeClick = 0;
     let panX = 0;
     let panY = 0;
     const panStep = 40;
@@ -51,18 +61,20 @@
     }
 
     function loadImageAndScheduleNext() {
-      cam.src = `${cameraUrl}?t=${Date.now()}`;
+      const url = new URL(cameraUrls[activeIndex]);
+      url.searchParams.set("t", Date.now());
+      cam.src = url.href;
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(loadImageAndScheduleNext, randomDelayMs());
     }
 
-    function updateTransform() {
+    function updateTransform(clampPan = true) {
       const width = cam.clientWidth;
       const height = cam.clientHeight;
-      if (zoom === 1 || !cam.naturalWidth || !cam.naturalHeight) {
+      if (clampPan && (zoom === 1 || !cam.naturalWidth || !cam.naturalHeight)) {
         panX = 0;
         panY = 0;
-      } else {
+      } else if (clampPan) {
         // Bound panning by the visible image, excluding object-fit letterboxing.
         const fit = Math.min(width / cam.naturalWidth, height / cam.naturalHeight);
         const maxX = Math.max(0, (cam.naturalWidth * fit * zoom - width) / 2);
@@ -98,10 +110,19 @@
       if (event.detail > 1) return;
       clearTimeout(clickTimer);
       zoomBeforeClick = zoom;
+      indexBeforeClick = activeIndex;
+      panXBeforeClick = panX;
+      panYBeforeClick = panY;
       const direction = event.clientY < window.innerHeight / 2 ? 1 : -1;
-      // Wait briefly so a double click refreshes without changing zoom.
+      const isLeft = event.clientX < window.innerWidth / 2;
+      // Wait briefly so a double click refreshes without zooming or cycling.
       clickTimer = setTimeout(() => {
-        applyZoom(zoom + direction * 0.25);
+        if (isLeft) {
+          applyZoom(zoom + direction * 0.25);
+        } else {
+          activeIndex = (activeIndex + direction + cameraUrls.length) % cameraUrls.length;
+          loadImageAndScheduleNext();
+        }
         clickTimer = null;
       }, 350);
     });
@@ -111,7 +132,12 @@
       clearTimeout(clickTimer);
       clickTimer = null;
       // Also undo the first click if the browser's double-click interval is longer.
-      applyZoom(zoomBeforeClick);
+      activeIndex = indexBeforeClick;
+      zoom = zoomBeforeClick;
+      panX = panXBeforeClick;
+      panY = panYBeforeClick;
+      // Wait for the original image to load before re-clamping restored pan.
+      updateTransform(false);
       loadImageAndScheduleNext();
     });
 
