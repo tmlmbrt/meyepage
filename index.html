@@ -40,6 +40,9 @@
     let clickTimer = null;
     let zoom = 1;
     let zoomBeforeClick = 1;
+    let panX = 0;
+    let panY = 0;
+    const panStep = 40;
 
     function randomDelayMs() {
       const min = 2 * 60 * 1000;
@@ -53,10 +56,43 @@
       refreshTimer = setTimeout(loadImageAndScheduleNext, randomDelayMs());
     }
 
+    function updateTransform() {
+      const width = cam.clientWidth;
+      const height = cam.clientHeight;
+      if (zoom === 1 || !cam.naturalWidth || !cam.naturalHeight) {
+        panX = 0;
+        panY = 0;
+      } else {
+        // Bound panning by the visible image, excluding object-fit letterboxing.
+        const fit = Math.min(width / cam.naturalWidth, height / cam.naturalHeight);
+        const maxX = Math.max(0, (cam.naturalWidth * fit * zoom - width) / 2);
+        const maxY = Math.max(0, (cam.naturalHeight * fit * zoom - height) / 2);
+        panX = Math.max(-maxX, Math.min(maxX, panX));
+        panY = Math.max(-maxY, Math.min(maxY, panY));
+      }
+      cam.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    }
+
     function applyZoom(value) {
       zoom = Math.max(1, Math.min(5, value));
-      cam.style.transform = `scale(${zoom})`;
+      updateTransform();
     }
+
+    document.addEventListener("keydown", (event) => {
+      if (zoom <= 1 || event.altKey || event.ctrlKey || event.metaKey) return;
+      switch (event.key) {
+        case "ArrowLeft": panX -= panStep; break;
+        case "ArrowRight": panX += panStep; break;
+        case "ArrowUp": panY -= panStep; break;
+        case "ArrowDown": panY += panStep; break;
+        default: return;
+      }
+      event.preventDefault();
+      updateTransform();
+    });
+
+    cam.addEventListener("load", updateTransform);
+    window.addEventListener("resize", updateTransform);
 
     document.addEventListener("click", (event) => {
       if (event.detail > 1) return;
