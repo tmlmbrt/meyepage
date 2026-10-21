@@ -28,10 +28,25 @@
       pointer-events: none;
       -webkit-user-drag: none;
     }
+
+    #messages {
+      position: fixed;
+      left: 8px;
+      bottom: 8px;
+      max-width: calc(100% - 32px);
+      color: white;
+      background: #000b;
+      font: 14px sans-serif;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
   <img id="cam" alt="Camera image" />
+  <div id="messages">
+    <div id="historyStatus" role="status"></div>
+    <div id="archiveWarning" role="alert"></div>
+  </div>
 
   <script>
     const cameraUrls = [
@@ -53,6 +68,179 @@
     let panX = 0;
     let panY = 0;
     const panStep = 40;
+    const historyStatus = document.getElementById("historyStatus");
+    const archiveWarning = document.getElementById("archiveWarning");
+    let database;
+    let archiveQueue = Promise.resolve();
+    let playbackTimer = null;
+    let playbackVersion = 0;
+    let playing = false;
+    let viewVersion = 0;
+    let visibleObjectUrl = null;
+    const liveRequests = new Set();
+
+    function warnArchive(message, error) {
+      archiveWarning.textContent = `${message}${error ? ` (${error.message || error.name})` : ""}`;
+    }
+
+    function openArchive() {
+      if (!database) {
+        database = new Promise((resolve, reject) => {
+          const request = indexedDB.open("camera-history", 1);
+          let failed = false;
+          function fail(error) {
+            failed = true;
+            reject(error);
+          }
+          request.onupgradeneeded = () => {
+            request.result.createObjectStore("frames", { keyPath: "id", autoIncrement: true });
+          };
+          request.onsuccess = () => {
+            const db = request.result;
+            if (failed) {
+              db.close();
+              return;
+            }
+            db.onversionchange = () => {
+              db.close();
+              database = null;
+            };
+            resolve(db);
+          };
+          request.onerror = () => fail(request.error);
+          request.onblocked = () => fail(new Error("History database is blocked by another tab"));
+        }).catch(error => {
+          database = null;
+          throw error;
+        });
+      }
+      return database;
+    }
+
+    async function archiveRequest(mode, action) {
+      const db = await openArchive();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction("frames", mode);
+        const request = action(transaction.objectStore("frames"));
+        transaction.oncomplete = () => resolve(request.result);
+        transaction.onabort = () => reject(transaction.error || request.error || new Error("History transaction aborted"));
+        transaction.onerror = () => reject(transaction.error || request.error);
+      });
+    }
+
+    function imageLoaded(source) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("Image could not be loaded"));
+        image.src = source;
+      });
+    }
+
+    async function displayImage(source, objectUrl, isCurrent) {
+      if (!isCurrent()) return false;
+      cam.src = source;
+      if (visibleObjectUrl && visibleObjectUrl !== objectUrl) URL.revokeObjectURL(visibleObjectUrl);
+      visibleObjectUrl = objectUrl;
+      await cam.decode();
+      // Start the frame's two seconds only after decoding and a rendering opportunity.
+      await new Promise(resolve => requestAnimationFrame(() => resolve()));
+      return isCurrent();
+    }
+
+    function archiveFrame(frame, loaded) {
+      // Reserve a queue position at download completion, before asynchronous decoding/writes.
+      archiveQueue = archiveQueue.then(async () => {
+        if (await loaded) await archiveRequest("readwrite", store => store.add(frame));
+      }).catch(error => warnArchive("Image history could not be saved. Live viewing remains available.", error));
+    }
+
+    function cancelPlayback() {
+      playbackVersion++;
+      playing = false;
+      clearTimeout(playbackTimer);
+      playbackTimer = null;
+      historyStatus.textContent = "";
+    }
+
+    function scheduleRefresh() {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(loadImageAndScheduleNext, randomDelayMs());
+    }
+
+    function stopLiveLoads() {
+      viewVersion++;
+      for (const controller of liveRequests) controller.abort();
+      liveRequests.clear();
+    }
+
+    async function startPlayback() {
+      cancelPlayback();
+      const session = playbackVersion;
+      const isCurrent = () => playing && session === playbackVersion;
+      playing = true;
+      clearTimeout(refreshTimer);
+      stopLiveLoads();
+      historyStatus.textContent = "Loading image history…";
+
+      function finish(message) {
+        if (!isCurrent()) return;
+        playing = false;
+        historyStatus.textContent = message;
+        scheduleRefresh();
+      }
+
+      try {
+        // Include completed downloads whose decoding or database commits are still pending.
+        await archiveQueue;
+        if (!isCurrent()) return;
+        const newest = await archiveRequest("readonly", store => store.openKeyCursor(null, "prev"));
+        if (!isCurrent()) return;
+        if (!newest) {
+          finish("No saved images yet.");
+          return;
+        }
+        const lastId = newest.key;
+        async function advance(previousId) {
+          let objectUrl;
+          try {
+            const cursor = await archiveRequest("readonly", store =>
+              store.openCursor(IDBKeyRange.bound(previousId + 1, lastId)));
+            if (!isCurrent()) return;
+            if (!cursor) {
+              finish("History complete. Live refresh will resume shortly.");
+              return;
+            }
+            const frame = cursor.value;
+            objectUrl = URL.createObjectURL(frame.blob);
+            await imageLoaded(objectUrl);
+            if (!await displayImage(objectUrl, objectUrl, isCurrent)) return;
+            historyStatus.textContent = `History: ${frame.sourceUrl}`;
+            playbackTimer = setTimeout(() => {
+              if (!isCurrent()) return;
+              if (frame.id === lastId) {
+                finish("History complete. Live refresh will resume shortly.");
+              } else {
+                advance(frame.id);
+              }
+            }, 2000);
+          } catch (error) {
+            if (isCurrent()) {
+              warnArchive("Image history playback failed.", error);
+              finish("Live refresh will resume shortly.");
+            }
+          } finally {
+            if (objectUrl && objectUrl !== visibleObjectUrl) URL.revokeObjectURL(objectUrl);
+          }
+        }
+        await advance(0);
+      } catch (error) {
+        if (isCurrent()) {
+          warnArchive("Image history is unavailable.", error);
+          finish("Live refresh will resume shortly.");
+        }
+      }
+    }
 
     function randomDelayMs() {
       const min = 1 * 60 * 1000;
@@ -60,12 +248,44 @@
       return Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
-    function loadImageAndScheduleNext() {
-      const url = new URL(cameraUrls[activeIndex]);
+    async function loadImageAndScheduleNext() {
+      cancelPlayback();
+      const version = ++viewVersion;
+      const isCurrent = () => !playing && version === viewVersion;
+      const cameraIndex = activeIndex;
+      const sourceUrl = cameraUrls[cameraIndex];
+      const url = new URL(sourceUrl);
       url.searchParams.set("t", Date.now());
-      cam.src = url.href;
-      clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(loadImageAndScheduleNext, randomDelayMs());
+      scheduleRefresh();
+      const controller = new AbortController();
+      liveRequests.add(controller);
+      let objectUrl;
+      try {
+        const response = await fetch(url.href, { mode: "cors", signal: controller.signal });
+        if (!response.ok || response.type === "opaque") throw new Error("Camera download is not readable");
+        const blob = await response.blob();
+        if (controller.signal.aborted) return;
+        const completedAt = Date.now();
+        objectUrl = URL.createObjectURL(blob);
+        const loaded = imageLoaded(objectUrl).then(() => true, () => false);
+        archiveFrame({ blob, sourceUrl, cameraIndex, downloadedUrl: url.href, completedAt }, loaded);
+        if (!await loaded) throw new Error("Camera returned an invalid image");
+        await displayImage(objectUrl, objectUrl, isCurrent);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        warnArchive("Frame cannot be archived: CORS/network restrictions or an invalid image. Remote viewing will still be attempted.", error);
+        if (isCurrent()) {
+          try {
+            await imageLoaded(url.href);
+            await displayImage(url.href, null, isCurrent);
+          } catch (viewError) {
+            if (isCurrent()) historyStatus.textContent = "Camera image is unavailable; waiting for the next refresh.";
+          }
+        }
+      } finally {
+        liveRequests.delete(controller);
+        if (objectUrl && objectUrl !== visibleObjectUrl) URL.revokeObjectURL(objectUrl);
+      }
     }
 
     function updateTransform(clampPan = true) {
@@ -103,8 +323,8 @@
       updateTransform();
     });
 
-    cam.addEventListener("load", updateTransform);
-    window.addEventListener("resize", updateTransform);
+    cam.addEventListener("load", () => updateTransform(true));
+    window.addEventListener("resize", () => updateTransform(true));
 
     document.addEventListener("click", (event) => {
       if (event.detail > 1) return;
@@ -115,7 +335,7 @@
       panYBeforeClick = panY;
       const direction = event.clientY < window.innerHeight / 2 ? 1 : -1;
       const isLeft = event.clientX < window.innerWidth / 2;
-      // Wait briefly so a double click refreshes without zooming or cycling.
+      // Retain the pre-click state even after this timer for slower double clicks.
       clickTimer = setTimeout(() => {
         if (isLeft) {
           applyZoom(zoom + direction * 0.25);
@@ -138,7 +358,13 @@
       panY = panYBeforeClick;
       // Wait for the original image to load before re-clamping restored pan.
       updateTransform(false);
-      loadImageAndScheduleNext();
+      if (event.clientX >= window.innerWidth / 2) {
+        if (event.clientY < window.innerHeight / 2) {
+          loadImageAndScheduleNext();
+        } else {
+          startPlayback();
+        }
+      }
     });
 
     loadImageAndScheduleNext();
