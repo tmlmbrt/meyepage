@@ -87,16 +87,31 @@
       if (!database) {
         database = new Promise((resolve, reject) => {
           const request = indexedDB.open("camera-history", 1);
+          let failed = false;
+          function fail(error) {
+            failed = true;
+            reject(error);
+          }
           request.onupgradeneeded = () => {
             request.result.createObjectStore("frames", { keyPath: "id", autoIncrement: true });
           };
           request.onsuccess = () => {
             const db = request.result;
-            db.onversionchange = () => db.close();
+            if (failed) {
+              db.close();
+              return;
+            }
+            db.onversionchange = () => {
+              db.close();
+              database = null;
+            };
             resolve(db);
           };
-          request.onerror = () => reject(request.error);
-          request.onblocked = () => reject(new Error("History database is blocked by another tab"));
+          request.onerror = () => fail(request.error);
+          request.onblocked = () => fail(new Error("History database is blocked by another tab"));
+        }).catch(error => {
+          database = null;
+          throw error;
         });
       }
       return database;

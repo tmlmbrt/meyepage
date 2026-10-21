@@ -71,7 +71,10 @@
       });
     };
     if (storageUnavailable) {
+      const original = window.indexedDB;
+      state.restoreStorage = () => Object.defineProperty(window, "indexedDB", { value: original, configurable: true });
       Object.defineProperty(window, "indexedDB", {
+        configurable: true,
         get() { throw new DOMException("Storage disabled", "SecurityError"); }
       });
     }
@@ -291,6 +294,28 @@
     await waitFor(() => evaluate('historyStatus.textContent.startsWith("History:")'), "pending frame playback");
   });
 
+  test("Restarting while an earlier playback image loads cannot overwrite the new session", async () => {
+    await fixture();
+    await complete(0);
+    evaluate(`
+      window.realImageLoaded = imageLoaded;
+      window.releaseHistoryImage = null;
+      imageLoaded = source => new Promise(resolve => {
+        releaseHistoryImage = () => realImageLoaded(source).then(resolve);
+      });
+    `);
+    doubleClick(500, 300);
+    await waitFor(() => evaluate("!!releaseHistoryImage"), "older playback image load");
+    evaluate("imageLoaded = realImageLoaded");
+    await startHistory();
+    const current = evaluate("cam.src");
+    evaluate("releaseHistoryImage()");
+    await sleep(80);
+    assert(evaluate("cam.src") === current, "Older playback session overwrote the restarted session");
+    assert(evaluate("[...testState.timers.values()].filter(timer => timer.delay === 2000).length") === 1, "Stale session scheduled a timer");
+    assert(evaluate("testState.created.filter(url => !testState.revoked.includes(url)).length") === 1, "Stale playback URL leaked");
+  });
+
   test("Empty history and unavailable storage return safely to scheduled live viewing", async () => {
     await fixture();
     doubleClick(500, 300);
@@ -302,6 +327,15 @@
     doubleClick(500, 300);
     await waitFor(() => evaluate("archiveWarning.textContent.includes('history is unavailable')"), "playback storage warning");
     assert(!evaluate("playing"), "Storage error did not restore live schedule");
+  });
+
+  test("Transient storage-open failures are retried on the next live download", async () => {
+    await fixture({ unavailable: true });
+    evaluate("testState.complete(0)");
+    await waitFor(() => evaluate("archiveWarning.textContent.includes('could not be saved')"), "initial storage error");
+    evaluate("testState.restoreStorage(); loadImageAndScheduleNext()");
+    await complete(1, 1);
+    assert((await storedFrames()).length === 1, "Storage open was permanently disabled");
   });
 
   test("Quota errors remain visible and do not prevent later archival attempts", async () => {
@@ -343,6 +377,26 @@
     `);
     await waitFor(() => evaluate("archiveWarning.textContent.includes('invalid image')"), "invalid image warning");
     assert((await storedFrames()).length === 0, "Invalid image archived");
+  });
+
+  test("HTTP errors and opaque responses never enter the archive", async () => {
+    await fixture();
+    evaluate(`
+      window.realImageLoaded = imageLoaded;
+      imageLoaded = source => source.startsWith("https:")
+        ? Promise.reject(new Error("Simulated fallback network failure"))
+        : realImageLoaded(source);
+    `);
+    evaluate("testState.requests[0].resolve({ ok: false, type: 'cors', status: 503 })");
+    await waitFor(() => evaluate("archiveWarning.textContent.includes('not readable')"), "HTTP error warning");
+    assert((await storedFrames()).length === 0, "HTTP error archived");
+    evaluate(`
+      loadImageAndScheduleNext();
+      archiveWarning.textContent = "";
+      testState.requests[1].resolve({ ok: true, type: "opaque" });
+    `);
+    await waitFor(() => evaluate("archiveWarning.textContent.includes('not readable')"), "opaque response warning");
+    assert((await storedFrames()).length === 0, "Opaque response archived");
   });
 
   const output = [];
