@@ -93,10 +93,10 @@
     document.addEventListener("keydown", (event) => {
       if (zoom <= 1 || event.altKey || event.ctrlKey || event.metaKey) return;
       switch (event.key) {
-        case "ArrowLeft": panX -= panStep; break;
-        case "ArrowRight": panX += panStep; break;
-        case "ArrowUp": panY -= panStep; break;
-        case "ArrowDown": panY += panStep; break;
+        case "ArrowRight": panX -= panStep; break;
+        case "ArrowLeft": panX += panStep; break;
+        case "ArrowDown": panY -= panStep; break;
+        case "ArrowUp": panY += panStep; break;
         default: return;
       }
       event.preventDefault();
