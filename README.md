@@ -28,12 +28,15 @@ and top-right double-clicks cancel playback.
 
 ### Cross-origin deployment limitation
 
-The external camera servers must permit CORS reads from the deployed page's
-origin (for example, its GitHub Pages origin). A successful remote `<img>` display
+All remote camera image requests, including fallback display, go through
+`https://meye-proxy-production.up.railway.app/meye/views?url=` with the
+cache-busted camera URL encoded in the `url` parameter. The proxy must permit
+CORS reads from the deployed page's origin (for example, its GitHub Pages origin).
+A successful remote `<img>` display
 does **not** prove that JavaScript can read its bytes. If CORS or the network
-prevents a readable download, the viewer attempts ordinary remote image display
+prevents a readable download, the viewer attempts image display through the same proxy
 and visibly warns that the frame cannot be archived. Such frames are absent
-from playback. No opaque `no-cors` response, proxy, or URL-only substitute is
+from playback. No opaque `no-cors` response or URL-only substitute is
 stored. Permissions must be verified on the actual deployment; this static page
 cannot grant itself permission to read another server's images.
 
@@ -46,4 +49,4 @@ browser IndexedDB and JPEG decoding, controlled download completions, and a
 virtual refresh/playback clock. They cover reload persistence, ordering,
 playback timing and cancellation, quadrant controls, and storage/CORS failures.
 Camera responses are simulated in these tests; they do not establish that the
-external servers grant CORS access in production.
+proxy grants CORS access in production.

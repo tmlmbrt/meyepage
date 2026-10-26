@@ -254,8 +254,9 @@
       const isCurrent = () => !playing && version === viewVersion;
       const cameraIndex = activeIndex;
       const sourceUrl = cameraUrls[cameraIndex];
-      const url = new URL(sourceUrl);
-      url.searchParams.set("t", Date.now());
+      const cameraUrl = new URL(sourceUrl);
+      cameraUrl.searchParams.set("t", Date.now());
+      const url = new URL(`https://meye-proxy-production.up.railway.app/meye/views?url=${encodeURIComponent(cameraUrl.href)}`);
       scheduleRefresh();
       const controller = new AbortController();
       liveRequests.add(controller);
