@@ -136,13 +136,29 @@
       evaluate('historyStatus.textContent.startsWith("History:")'), "playback frame");
   }
 
+  test("All cameras use the proxy with an encoded, cache-busted source URL", async () => {
+    await fixture();
+    evaluate('cameraUrls[1] += "?label=a%26b&view=wide#frame"');
+    for (let index = 0; index < evaluate("cameraUrls.length"); index++) {
+      if (index > 0) evaluate(`activeIndex = ${index}; loadImageAndScheduleNext()`);
+      const requestUrl = new URL(evaluate(`testState.requests[${index}].url`));
+      assert(requestUrl.origin === "https://meye-proxy-production.up.railway.app" &&
+        requestUrl.pathname === "/meye/views", "Request bypassed the proxy");
+      assert([...requestUrl.searchParams.keys()].join() === "url", "Source query leaked into proxy parameters");
+      const cameraUrl = new URL(requestUrl.searchParams.get("url"));
+      assert(/^\d+$/.test(cameraUrl.searchParams.get("t")), "Source cache-buster missing");
+      cameraUrl.searchParams.delete("t");
+      assert(cameraUrl.href === evaluate(`cameraUrls[${index}]`), "Source URL changed during encoding");
+    }
+  });
+
   test("Original JPEG bytes and source metadata survive a reload", async () => {
     await fixture();
     await complete(0, 1);
     const before = (await storedFrames())[0];
     assert(before.sourceUrl === evaluate("cameraUrls[0]"), "Source URL missing");
     assert(before.cameraIndex === 0 && before.id === 1, "Camera/order missing");
-    assert(before.downloadedUrl.includes("?t="), "Download URL missing");
+    assert(before.downloadedUrl === evaluate("testState.requests[0].url"), "Proxied download URL missing");
     const bytes = Array.from(new Uint8Array(await before.blob.arrayBuffer()));
     await fixture({ reset: false });
     const after = (await storedFrames())[0];
@@ -359,16 +375,26 @@
     await fixture();
     evaluate(`
       window.realImageLoaded = imageLoaded;
-      imageLoaded = source => source.startsWith("https:")
-        ? realImageLoaded("data:image/jpeg;base64," + testState.imageData[0])
-        : realImageLoaded(source);
+      window.fallbackSources = [];
+      imageLoaded = source => {
+        fallbackSources.push(source);
+        return source.startsWith("https:")
+          ? realImageLoaded("data:image/jpeg;base64," + testState.imageData[0])
+          : realImageLoaded(source);
+      };
       window.realDisplayImage = displayImage;
-      displayImage = (source, objectUrl, current) => realDisplayImage(
-        source.startsWith("https:") ? "data:image/jpeg;base64," + testState.imageData[0] : source,
-        objectUrl, current);
+      window.fallbackDisplays = [];
+      displayImage = (source, objectUrl, current) => {
+        fallbackDisplays.push(source);
+        return realDisplayImage(
+          source.startsWith("https:") ? "data:image/jpeg;base64," + testState.imageData[0] : source,
+          objectUrl, current);
+      };
       testState.requests[0].reject(new TypeError("Failed to fetch"));
     `);
     await waitFor(() => evaluate("cam.naturalWidth > 0"), "remote fallback display");
+    assert(evaluate("fallbackSources[0] === testState.requests[0].url && fallbackDisplays[0] === testState.requests[0].url"),
+      "Fallback bypassed the proxy");
     assert(evaluate("archiveWarning.textContent.includes('CORS/network')"), "CORS failure hidden");
     assert((await storedFrames()).length === 0, "Unreadable remote URL archived");
     evaluate(`
